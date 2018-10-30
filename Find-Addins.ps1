@@ -2,11 +2,13 @@
 .Synopsis
    Find Office addins installed by your users. It includes COM Addins, VSTO Addins, and Web Addins.
 .DESCRIPTION
-   Long description
+   Find-Addins checks the registry and scans user %APPDATA% folders looking for Office Add-Ins.
+
+   Use it to detect unexpected Add-Ins; such as those installed by a malicious user.
 .EXAMPLE
-   Example of how to use this cmdlet
+   Find-Addins.ps1
 .EXAMPLE
-   Another example of how to use this cmdlet
+   Find-Addins.ps1 -OutPath C:\Temp\addinscan.csv
 #>
 [CmdletBinding()]
 [Alias()]
@@ -175,7 +177,8 @@ Write-Verbose "Searching HKEY_USERS"
         Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue | 
             Add-Member -MemberType NoteProperty -Name 'Where' -Value (tl($_.PSPath.Split('\')[2])) -PassThru |
             Add-Member -MemberType NoteProperty -Name 'Product' -Value $product -PassThru |
-            Add-Member -MemberType NoteProperty -Name 'AddinType' -Value 'COM/VSTO' -PassThru
+            Add-Member -MemberType NoteProperty -Name 'AddinType' -Value 'COM/VSTO' -PassThru |
+            Add-Member -MemberType NoteProperty -Name 'Id' -Value $_.PSChildName -PassThru
 
     }
 } | ForEach-Object {
@@ -194,7 +197,8 @@ $morestuff = get-childitem -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Office' -
         Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue | 
             Add-Member -MemberType NoteProperty -Name 'Where' -Value 'HKLM:\SOFTWARE' -PassThru |
             Add-Member -MemberType NoteProperty -Name 'Product' -Value $product -PassThru |
-            Add-Member -MemberType NoteProperty -Name 'AddinType' -Value 'COM/VSTO' -PassThru
+            Add-Member -MemberType NoteProperty -Name 'AddinType' -Value 'COM/VSTO' -PassThru |
+            Add-Member -MemberType NoteProperty -Name 'Id' -Value $_.PSChildName -PassThru
     }
 } | ForEach-Object {
     foreach ($p in $_.PSObject.Properties.Name) {
@@ -205,7 +209,7 @@ $morestuff = get-childitem -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Office' -
     $_
 }
 if($morestuff) {
-    $outp.AddRange($morestuff) | out-null
+    $outp.AddRange(@($morestuff)) | out-null
 }
 
 Write-Verbose "Searching HKLM:\SOFTWARE\Microsoft\Office"
@@ -215,7 +219,8 @@ $morestuff = get-childitem -Path 'HKLM:\SOFTWARE\Microsoft\Office' -ErrorAction 
         Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue | 
             Add-Member -MemberType NoteProperty -Name 'Where' -Value 'HKLM:\SOFTWARE' -PassThru |
             Add-Member -MemberType NoteProperty -Name 'Product' -Value $product -PassThru |
-            Add-Member -MemberType NoteProperty -Name 'AddinType' -Value 'COM/VSTO' -PassThru
+            Add-Member -MemberType NoteProperty -Name 'AddinType' -Value 'COM/VSTO' -PassThru |
+            Add-Member -MemberType NoteProperty -Name 'Id' -Value $_.PSChildName -PassThru 
     }
 } | ForEach-Object {
     foreach ($p in $_.PSObject.Properties.Name) {
@@ -226,30 +231,36 @@ $morestuff = get-childitem -Path 'HKLM:\SOFTWARE\Microsoft\Office' -ErrorAction 
     $_
 }
 if($morestuff) {
-    $outp.AddRange($morestuff) | out-null
+    $outp.AddRange(@($morestuff)) | out-null
 }
 
 Write-Verbose "Searching Filesystem"
 $morestuff = Get-ChildItem -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' | ForEach-Object {
     $p = $_
     $u = tl($p.PSChildName)
+    
+    $profpath = $p | Get-ItemPropertyValue -Name ProfileImagePath
+    $profpath = Join-Path -Path $profpath -ChildPath "AppData"
+
     Write-Verbose "  Searching files for user $($u)"
-    Get-NoRPChildItem -path ($p.ProfileImagePath) -Recurse | Where-Object -Property FullName -Like "*\Microsoft\Office\*\Manifests\*" | ForEach-Object {
-        Write-Verbose "    Parsing manifest file $($_.FullPath)"
-        [xml]$x = Get-Content $_.FullPath
-        $urls = Select-Xml -Xml $x -XPath ".//@*" | ForEach-Object {$_.Node} | Where-Object -Property Value -like "http*" | Select-Object -ExpandProperty '#text'
-        New-Object PSObject -Property @{
-                Id=$x.OfficeApp.Id;
-                PSPath=$_.FullPath;
-                Version=$x.OfficeApp.Version;
-                ProviderName=$x.OfficeApp.ProviderName;
-                DisplayName=$x.OfficeApp.DisplayName;
-                Description=$x.OfficeApp.Description;
-                Permissions=$x.OfficeApp.Permissions;
-                Where=$u;
-                Product=$x.OfficeApp.type;
-                URLs=$urls;
-                AddinType='Web'
+    Get-NoRPChildItem -path ($profpath) -Recurse -ErrorAction SilentlyContinue | Where-Object -Property FullName -Like "*\Microsoft\Office\*\Manifests\*" | ForEach-Object {
+        Write-Verbose "    Parsing manifest file $($_.FullName)"
+        [xml]$x = Get-Content $_.FullName -ErrorAction SilentlyContinue
+        if ($x) {
+            $urls = Select-Xml -Xml $x -XPath ".//@*" | ForEach-Object {$_.Node} | Where-Object -Property Value -like "http*" | Select-Object -ExpandProperty '#text'
+            New-Object PSObject -Property @{
+                    Id=$x.OfficeApp.Id;
+                    PSPath=$_.FullName;
+                    Version=$x.OfficeApp.Version;
+                    ProviderName=$x.OfficeApp.ProviderName;
+                    FriendlyName=$x.OfficeApp.DisplayName.DefaultValue;
+                    Description=$x.OfficeApp.Description.DefaultValue;
+                    Permissions=($x.OfficeApp.Permissions -join " ");
+                    Where=$u;
+                    Product=$x.OfficeApp.type;
+                    URLs=($urls -join " ");
+                    AddinType='Web'
+            }
         }
     }
 
@@ -262,15 +273,14 @@ $morestuff = Get-ChildItem -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVer
     $_
 }
 if($morestuff) {
-    $outp.AddRange($morestuff) | out-null
+    $outp.AddRange(@($morestuff)) | out-null
 }
-
-
 
 
 # remove this crap
 $props.Remove('PSParentPath') | Out-Null
 $props.Remove('PSProvider') | Out-Null
+$props.Remove('PSChildName') | Out-Null
 
 if ($OutPath) {
     $outp | Select-Object -Property $props | Export-Csv -Path $OutPath -NoTypeInformation
