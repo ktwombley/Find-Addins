@@ -5,6 +5,8 @@
    Find-Addins checks the registry and scans user %APPDATA% folders looking for Office Add-Ins.
 
    Use it to detect unexpected Add-Ins; such as those installed by a malicious user.
+
+   For best results, run as a user with Administrator privileges. When run as an unprivileged user, Find-Addins.ps1 will only reliably find Addins either installed for the current user or all users.
 .EXAMPLE
    Find-Addins.ps1
 .EXAMPLE
