@@ -241,7 +241,7 @@ $morestuff = Get-ChildItem -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVer
     $p = $_
     $u = tl($p.PSChildName)
     
-    $profpath = $p | Get-ItemPropertyValue -Name ProfileImagePath
+    $profpath = ($p | Get-ItemProperty -Name 'ProfileImagePath').ProfileImagePath
     $profpath = Join-Path -Path $profpath -ChildPath "AppData"
 
     Write-Verbose "  Searching files for user $($u)"
