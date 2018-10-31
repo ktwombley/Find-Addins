@@ -15,4 +15,5 @@
    * Thanks to [@dafthack](https://github.com/dafthack) and [@ustayready](https://github.com/ustayready) for exposing the need for a script like this (and the awesome talk at Wild West Hackin Fest 2018)
    * Swamprat
    * LadyCoder2098
+   * [@chono91](https://github.com/chono91) 
    * Friend who forbid me from crediting them
